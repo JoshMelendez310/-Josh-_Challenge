@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create ALB, ALB security group, target groups, listeners and listener rules"
+Parameters:
+  VPC:
+    Type: String
+    Description: The vpc to launch the service
+    Default: vpc-337ed958
+
+  PublicSubnet1:
+    Type: String
+    Description: The subnet where to launch the service
+    Default: subnet-4b646031
+
+  PublicSubnet2:
+    Type: String
+    Description: the subnet where to Launch the service
+    Default: subnet-595c9332
+
+  PublicSubnet3:
+    Type: String
+    Description: the subnet where to Launch the service
+    Default: subnet-72432f3e
+
+
+Resources:
+  ALBSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "security group for ALB"
+      GroupName: "test-ALB-SG"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: "tcp"
+          FromPort: 443
+          ToPort: 443
+          CidrIp: "0.0.0.0/0"
+
+  ApplicationLoadBalancer:
+    Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
+    Properties:
+      Name: "test-Application-Load-Balancer"
+      Scheme: "internet-facing"
+      Type: "application"
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+        - !Ref PublicSubnet3
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      IpAddressType: "ipv4"
+      LoadBalancerAttributes:
+        - Key: "access_logs.s3.enabled"
+          Value: "false"
+        - Key: "idle_timeout.timeout_seconds"
+          Value: "60"
+        - Key: "deletion_protection.enabled"
+          Value: "false"
+        - Key: "routing.http2.enabled"
+          Value: "true"
+        - Key: "routing.http.drop_invalid_header_fields.enabled"
+          Value: "false"
+
+  HTTPSListener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: "HTTPS"
+      SslPolicy: "ELBSecurityPolicy-2016-08"
+      Certificates:
+        - CertificateArn: arn:aws:iam::792524324095:server-certificate/MyCert
+
+      DefaultActions:
+        - Order: 1
+          TargetGroupArn: !Ref TargetGroup
+          Type: "forward"
+
+  HTTPListener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: "HTTP"
+      DefaultActions:
+        - Order: 1
+          RedirectConfig:
+            Protocol: "HTTPS"
+            Port: "443"
+            Host: "#{host}"
+            Path: "/#{path}"
+            Query: "#{query}"
+            StatusCode: "HTTP_301"
+          Type: "redirect"
+
+  TargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: "/"
+      Port: 80
+      Protocol: "HTTP"
+      HealthCheckPort: "traffic-port"
+      HealthCheckProtocol: "HTTP"
+      HealthCheckTimeoutSeconds: 5
+      UnhealthyThresholdCount: 2
+      TargetType: "instance"
+      Matcher:
+        HttpCode: "200"
+      HealthyThresholdCount: 5
+      VpcId: !Ref VPC
+      Name: "target-group-sec"
+      HealthCheckEnabled: true
